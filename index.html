@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Щиток — расчёт</title>
+<style>
+:root{--bg:#1b1f24;--pan:#252a31;--line:#3a414b;--tx:#d7dde4;--mut:#8a94a0;--acc:#f5a623;--ok:#5fd38d;--err:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px "Segoe UI",Arial,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 18px;background:#14171b;border-bottom:2px solid var(--acc)}
+header h1{margin:0;font:600 16px Consolas,"Courier New",monospace;letter-spacing:.5px}
+header span{color:var(--mut);font:12px Consolas,monospace}
+main{display:grid;grid-template-columns:minmax(340px,420px) 1fr;gap:14px;padding:14px;align-items:start}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.panel{background:var(--pan);border:1px solid var(--line);border-radius:4px}
+.panel h2{margin:0;padding:8px 12px;font:600 12px Consolas,monospace;text-transform:uppercase;color:var(--acc);border-bottom:1px solid var(--line);letter-spacing:.6px}
+.body{padding:12px}
+label.f{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+input[type=number]{width:90px;background:#15181c;color:var(--tx);border:1px solid var(--line);border-radius:3px;padding:5px 6px;font:13px Consolas,monospace;text-align:right}
+td input[type=number]{width:72px}
+input[type=checkbox]{accent-color:var(--acc);width:16px;height:16px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:3px;overflow:hidden;flex-wrap:wrap}
+.seg button{background:#15181c;color:var(--mut);border:none;padding:6px 10px;font:12px Consolas,monospace;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--acc);color:#111;font-weight:600}
+table{width:100%;border-collapse:collapse;font:13px Consolas,monospace}
+th{text-align:left;font-weight:600;color:var(--mut);font-size:11px;padding:6px;border-bottom:1px solid var(--line);text-transform:uppercase}
+td{padding:6px;border-bottom:1px solid #2f353d}
+.num{text-align:right}
+.btn{width:100%;padding:11px;margin-top:12px;background:var(--acc);color:#111;border:none;border-radius:3px;font:600 14px "Segoe UI",Arial;cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.sum{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font:13px Consolas,monospace;padding:10px 12px}
+.sum .big{color:var(--acc);font-weight:700;font-size:16px}
+.err{color:var(--err)}
+.warn{margin:10px 12px;padding:8px 10px;border:1px solid var(--err);color:var(--err);border-radius:3px;font-size:13px;line-height:1.4}
+.scheme{overflow-x:auto;padding:10px;color:var(--tx);background-image:linear-gradient(#2b3138 1px,transparent 1px),linear-gradient(90deg,#2b3138 1px,transparent 1px);background-size:20px 20px}
+.note{padding:8px 12px;color:var(--mut);font-size:12px;line-height:1.4}
+#result{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>ЩИТ-КАЛЬКУЛЯТОР · квартирный ввод</h1>
+  <span>220/380 В · расчёт упрощённый</span>
+</header>
+<main>
+  <div>
+    <section class="panel"><h2>Исходные данные</h2><div class="body">
+      <label class="f">Площадь, м² <input id="area" type="number" min="1" step="1" value="60"></label>
+      <label class="f">Провод <span class="seg"><button id="mCu" class="on" onclick="setMat('cu')">Cu медь</button><button id="mAl" onclick="setMat('al')">Al алюминий</button></span></label>
+      <label class="f">Одновременность <span class="seg"><button id="k7" class="on" onclick="setDemand(0.7)">0,7</button><button id="k10" onclick="setDemand(1)">1,0</button></span></label>
+      <label class="f">Сеть <span class="seg"><button id="p1" class="on" onclick="setPhase(1)">1ф 220 В</button><button id="p3" onclick="setPhase(3)">3ф 380 В</button></span></label>
+    </div></section>
+    <section class="panel" style="margin-top:14px"><h2>Нагрузки</h2><div class="body" style="padding:0">
+      <table><thead><tr><th></th><th>Прибор</th><th class="num">кВт</th></tr></thead><tbody id="appl"></tbody></table>
+    </div></section>
+    <button class="btn" onclick="calc()">РАССЧИТАТЬ</button>
+  </div>
+
+  <div id="result">
+    <section class="panel"><h2>Вводной аппарат</h2><div id="input"></div></section>
+    <section class="panel" style="margin-top:14px"><h2>Групповые линии</h2><div class="body" style="padding:0">
+      <table><thead><tr><th>Группа</th><th class="num">кВт</th><th class="num">I, А</th><th class="num">Автомат</th><th class="num">Кабель</th><th class="num">УЗО</th></tr></thead><tbody id="groups"></tbody></table>
+    </div><div id="warnings"></div></section>
+    <section class="panel" style="margin-top:14px"><h2>Однолинейная схема</h2><div class="scheme" id="scheme"></div></section>
+    <section class="panel" style="margin-top:14px"><h2>Подключение L / N / PE</h2><div class="scheme" id="wiring"></div>
+      <div class="note">L — фаза (коричневый), N — ноль (синий), PE — заземление (жёлто-зелёный). Автомат и УЗО стоят на фазе, УЗО разрывает ноль. Пересечения линий без точки не соединены.</div>
+    </section>
+    <div class="note">Таблицы токов приближённые, одновременность условна. Результат должен проверить электрик с допуском.</div>
+  </div>
+</main>
+
+<script>
+const APPL = [
+  ["Розетки (общие)", 3.5, true],
+  ["Стиральная машина", 2.2, true],
+  ["Посудомоечная машина", 2.0, true],
+  ["Электроплита / варочная панель", 7.0, true],
+  ["Бойлер (накопительный)", 2.0, true],
+  ["Кондиционер", 2.5, true],
+  ["Сушильная машина", 2.5, false],
+  ["Тёплый пол", 1.5, false],
+  ["Микроволновая печь", 1.2, false],
+  ["Электромобиль (зарядка)", 7.4, false]
+];
+const CABLE = {
+  cu: [[1.5, 19], [2.5, 27], [4, 38], [6, 46], [10, 70], [16, 85]],
+  al: [[2.5, 21], [4, 28], [6, 36], [10, 50], [16, 60]]
+};
+const BREAKERS = [6, 10, 16, 20, 25, 32, 40, 50, 63];
+const INPUT_BREAKERS = [25, 32, 40, 50, 63];
+let MAT = 'cu', DEMAND = 0.7, PHASES = 1;
+
+function current(p) { return p * 1000 / (220 * 0.95); }
+function pickBreaker(i, list = BREAKERS) { for (const b of list) if (b >= i) return b; return null; }
+function pickCable(b) { for (const [s, a] of CABLE[MAT]) if (a >= b) return s; return null; }
+function cableText(b) { const s = pickCable(b); return s ? s + ' мм²' : 'больше 16 мм² (уточнить)'; }
+
+function pick(ids, active) { ids.forEach(id => document.getElementById(id).classList.toggle('on', id === active)); }
+function recalc() { if (document.getElementById('result').style.display === 'block') calc(); }
+function setMat(m) { MAT = m; pick(['mCu', 'mAl'], m === 'cu' ? 'mCu' : 'mAl'); recalc(); }
+function setDemand(k) { DEMAND = k; pick(['k7', 'k10'], k === 0.7 ? 'k7' : 'k10'); recalc(); }
+function setPhase(p) { PHASES = p; pick(['p1', 'p3'], p === 1 ? 'p1' : 'p3'); recalc(); }
+
+const tb0 = document.getElementById('appl');
+APPL.forEach(([name, p, on], i) => {
+  tb0.insertAdjacentHTML('beforeend',
+    `<tr><td><input type="checkbox" id="on${i}" ${on ? 'checked' : ''}></td><td>${name}</td><td class="num"><input type="number" step="0.1" min="0" value="${p}" id="p${i}"></td></tr>`);
+});
+
+function drawScheme(rows, inputB) {
+  const box = document.getElementById('scheme');
+  const ok = rows.filter(r => r.b && r.c);
+  if (!ok.length) { box.innerHTML = "<div class='note'>Нет групп для схемы</div>"; return; }
+  const W = 130 + ok.length * 84, H = 266, busY = 110;
+  let s = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}' font-family='Consolas,monospace' fill='currentColor'>`;
+  s += `<text x='8' y='22' font-size='12'>ВВОД</text>`;
+  s += `<rect x='8' y='30' width='60' height='40' rx='3' fill='none' stroke='currentColor' stroke-width='2'/>`;
+  s += `<text x='38' y='55' font-size='13' font-weight='600' text-anchor='middle'>${inputB ? inputB + ' А' : '?'}</text>`;
+  s += `<line x1='38' y1='70' x2='38' y2='${busY}' stroke='#f5a623' stroke-width='3'/>`;
+  s += `<line x1='38' y1='${busY}' x2='${W - 10}' y2='${busY}' stroke='#f5a623' stroke-width='4'/>`;
+  s += `<text x='14' y='${busY - 6}' font-size='11'>L</text>`;
+  ok.forEach((r, i) => {
+    const cx = 100 + i * 84;
+    const short = r.name.length > 12 ? r.name.slice(0, 11) + '…' : r.name;
+    s += `<line x1='${cx}' y1='${busY}' x2='${cx}' y2='140' stroke='currentColor' stroke-width='2'/>`;
+    s += `<rect x='${cx - 16}' y='140' width='32' height='44' rx='4' fill='none' stroke='currentColor' stroke-width='2'/>`;
+    s += `<text x='${cx}' y='166' font-size='10' font-weight='600' text-anchor='middle'>${r.b}А</text>`;
+    s += `<line x1='${cx}' y1='184' x2='${cx}' y2='196' stroke='currentColor' stroke-width='2'/>`;
+    s += `<rect x='${cx - 16}' y='196' width='32' height='20' rx='4' fill='none' stroke='currentColor'/>`;
+    s += `<text x='${cx}' y='210' font-size='9' text-anchor='middle'>УЗО</text>`;
+    s += `<line x1='${cx}' y1='216' x2='${cx}' y2='226' stroke='#8a94a0' stroke-width='2'/>`;
+    s += `<text x='${cx}' y='240' font-size='10' text-anchor='middle' fill='#8a94a0'>${r.c} мм²</text>`;
+    s += `<text x='${cx}' y='256' font-size='10' text-anchor='middle'>${short}</text>`;
+  });
+  box.innerHTML = s + '</svg>';
+}
+
+function drawWiring(rows, inputB) {
+  const box = document.getElementById('wiring');
+  const ok = rows.filter(r => r.b && r.c);
+  if (!ok.length) { box.innerHTML = "<div class='note'>Нет групп для схемы</div>"; return; }
+  const first = 84, rowH = 58, xPE = 40, xN = 60, xL = 80, xLoad = 270;
+  const lastY = first + (ok.length - 1) * rowH;
+  const yEnd = lastY + 14, H = lastY + 40, W = 560;
+  const cL = '#c8793a', cN = '#5b9cff', cPE = '#9fd13b';
+  let s = `<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}' font-family='Consolas,monospace' fill='currentColor'>`;
+  s += `<rect x='8' y='8' width='320' height='30' rx='4' fill='none' stroke='currentColor' stroke-width='1.5'/>`;
+  s += `<text x='18' y='28' font-size='12' font-weight='600'>Ввод 220 В: вводной автомат ${inputB ? inputB + ' А' : '?'}</text>`;
+  s += `<line x1='${xL}' y1='38' x2='${xL}' y2='${yEnd}' stroke='${cL}' stroke-width='3'/>`;
+  s += `<line x1='${xN}' y1='38' x2='${xN}' y2='${yEnd}' stroke='${cN}' stroke-width='3'/>`;
+  s += `<line x1='${xPE}' y1='38' x2='${xPE}' y2='${yEnd}' stroke='${cPE}' stroke-width='3'/>`;
+  s += `<rect x='${xL - 7}' y='46' width='14' height='14' rx='2' fill='none' stroke='${cL}' stroke-width='2'/>`;
+  s += `<text x='${xL}' y='${yEnd + 14}' font-size='10' text-anchor='middle' fill='${cL}'>L</text>`;
+  s += `<text x='${xN}' y='${yEnd + 14}' font-size='10' text-anchor='middle' fill='${cN}'>N</text>`;
+  s += `<text x='${xPE}' y='${yEnd + 14}' font-size='10' text-anchor='middle' fill='${cPE}'>PE</text>`;
+  ok.forEach((r, i) => {
+    const y = first + i * rowH;
+    s += `<line x1='${xL}' y1='${y - 6}' x2='${xLoad}' y2='${y - 6}' stroke='${cL}' stroke-width='2.5'/>`;
+    s += `<line x1='${xN}' y1='${y + 6}' x2='${xLoad}' y2='${y + 6}' stroke='${cN}' stroke-width='2.5'/>`;
+    s += `<line x1='${xPE}' y1='${y + 14}' x2='${xLoad}' y2='${y + 14}' stroke='${cPE}' stroke-width='2.5'/>`;
+    s += `<circle cx='${xL}' cy='${y - 6}' r='3' fill='currentColor'/><circle cx='${xN}' cy='${y + 6}' r='3' fill='currentColor'/><circle cx='${xPE}' cy='${y + 14}' r='3' fill='currentColor'/>`;
+    s += `<rect x='110' y='${y - 14}' width='30' height='16' rx='2' fill='none' stroke='currentColor' stroke-width='1.5'/>`;
+    s += `<text x='125' y='${y - 20}' font-size='10' font-weight='600' text-anchor='middle'>${r.b}А</text>`;
+    s += `<rect x='160' y='${y - 16}' width='34' height='28' rx='3' fill='none' stroke='currentColor' stroke-width='1.5'/>`;
+    s += `<text x='177' y='${y - 20}' font-size='9' text-anchor='middle'>УЗО 30 мА</text>`;
+    s += `<rect x='${xLoad}' y='${y - 16}' width='18' height='32' rx='4' fill='none' stroke='currentColor' stroke-width='1.5'/>`;
+    s += `<text x='298' y='${y - 2}' font-size='12' font-weight='600'>${r.name}</text>`;
+    s += `<text x='298' y='${y + 12}' font-size='10' fill='#8a94a0'>${r.b} А · кабель ${r.c} мм²</text>`;
+  });
+  box.innerHTML = s + '</svg>';
+}
+
+function calc() {
+  const area = parseFloat(document.getElementById('area').value) || 0;
+  if (area <= 0) { alert('Введите площадь квартиры'); return; }
+
+  const items = [{ name: 'Освещение', p: Math.max(0.5, Math.round(area * 0.015 * 100) / 100) }];
+  APPL.forEach(([name], i) => {
+    if (document.getElementById('on' + i).checked) {
+      const p = parseFloat(document.getElementById('p' + i).value) || 0;
+      if (p > 0) items.push({ name, p });
+    }
+  });
+
+  const tb = document.getElementById('groups');
+  tb.innerHTML = '';
+  const warnings = [], rows = [];
+  items.forEach(({ name, p }) => {
+    const I = current(p);
+    const b = pickBreaker(I);
+    const c = b ? pickCable(b) : null;
+    if (b && c) {
+      rows.push({ name, b, c });
+      tb.insertAdjacentHTML('beforeend', `<tr><td>${name}</td><td class='num'>${p}</td><td class='num'>${I.toFixed(1)}</td><td class='num'>${b} А</td><td class='num'>${c} мм²</td><td class='num'>30 мА</td></tr>`);
+    } else {
+      tb.insertAdjacentHTML('beforeend', `<tr><td class='err'>${name}</td><td class='num'>${p}</td><td class='num'>${I.toFixed(1)}</td><td colspan='3' class='err'>не защищается одним автоматом</td></tr>`);
+      warnings.push(`«${name}» не удаётся защитить одним автоматом.`);
+    }
+  });
+
+  const total = items.reduce((s, x) => s + x.p, 0);
+  const inputI = PHASES === 3 ? total * DEMAND * 1000 / (Math.sqrt(3) * 380 * 0.95) : current(total * DEMAND);
+  const inputB = pickBreaker(inputI, INPUT_BREAKERS);
+  const inp = document.getElementById('input');
+  if (inputB) {
+    inp.innerHTML = `<div class='sum'>
+      <span>Суммарная мощность</span><span>${total.toFixed(1)} кВт</span>
+      <span>С одновременностью ${DEMAND === 1 ? '100' : '70'}%</span><span>${(total * DEMAND).toFixed(1)} кВт</span>
+      <span>Сеть</span><span>${PHASES === 3 ? '3 фазы, 380 В' : '1 фаза, 220 В'}</span>
+      <span>Рекомендуемый вводной автомат</span><span class='big'>${inputB} А</span>
+      <span>Кабель ввода</span><span>${cableText(inputB)}</span></div>`;
+  } else {
+    inp.innerHTML = `<div class='sum'><span>Суммарная мощность</span><span>${total.toFixed(1)} кВт</span><span class='err'>Вводной автомат</span><span class='err'>превышен</span></div>`;
+    warnings.push('Расчётная нагрузка выше 63 А. Уменьшите нагрузку или проверьте ввод.');
+  }
+
+  document.getElementById('warnings').innerHTML = warnings.map(t => `<div class='warn'>${t}</div>`).join('');
+  drawScheme(rows, inputB);
+  drawWiring(rows, inputB);
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
